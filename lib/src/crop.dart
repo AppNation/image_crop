@@ -21,6 +21,7 @@ class Crop extends StatefulWidget {
   final bool alwaysShowGrid;
   final ImageErrorListener? onImageError;
   final int rotationDegree;
+  final BorderSide? border;
 
   const Crop({
     Key? key,
@@ -30,6 +31,7 @@ class Crop extends StatefulWidget {
     this.alwaysShowGrid = false,
     this.onImageError,
     this.rotationDegree = 0,
+    this.border,
   }) : super(key: key);
 
   Crop.file(
@@ -41,6 +43,7 @@ class Crop extends StatefulWidget {
     this.alwaysShowGrid = false,
     this.onImageError,
     this.rotationDegree = 0,
+    this.border,
   })  : image = FileImage(file, scale: scale),
         super(key: key);
 
@@ -54,6 +57,7 @@ class Crop extends StatefulWidget {
     this.alwaysShowGrid = false,
     this.onImageError,
     this.rotationDegree = 0,
+    this.border,
   })  : image = AssetImage(assetName, bundle: bundle, package: package),
         super(key: key);
 
@@ -64,7 +68,7 @@ class Crop extends StatefulWidget {
       context.findAncestorStateOfType<CropState>();
 }
 
-class CropState extends State<Crop> with TickerProviderStateMixin, Drag {
+class CropState extends State<Crop> with TickerProviderStateMixin {
   final _surfaceKey = GlobalKey();
 
   late final AnimationController _activeController;
@@ -199,6 +203,7 @@ class CropState extends State<Crop> with TickerProviderStateMixin, Drag {
                 scale: _scale,
                 active: _activeController.value,
                 rotationDegree: widget.rotationDegree,
+                border: widget.border,
               ),
             ),
           ),
@@ -646,6 +651,7 @@ class _CropPainter extends CustomPainter {
   final double scale;
   final double active;
   final int rotationDegree;
+  final BorderSide? border;
 
   _CropPainter({
     required this.image,
@@ -655,6 +661,7 @@ class _CropPainter extends CustomPainter {
     required this.scale,
     required this.active,
     required this.rotationDegree,
+    this.border,
   });
 
   @override
@@ -664,7 +671,8 @@ class _CropPainter extends CustomPainter {
         oldDelegate.ratio != ratio ||
         oldDelegate.area != area ||
         oldDelegate.active != active ||
-        oldDelegate.scale != scale;
+        oldDelegate.scale != scale ||
+        oldDelegate.border != border;
   }
 
   @override
@@ -730,10 +738,48 @@ class _CropPainter extends CustomPainter {
 
     if (boundaries.isEmpty == false) {
       _drawGrid(canvas, boundaries);
-      _drawHandles(canvas, boundaries);
+      if (border != null)
+        _drawDashedLines(canvas, boundaries);
+      else
+        _drawHandles(canvas, boundaries);
     }
 
     canvas.restore();
+  }
+
+  void _drawDashedLines(Canvas canvas, Rect boundaries) {
+    final paint = Paint()
+      ..isAntiAlias = true
+      ..strokeWidth = border!.width
+      ..color = border!.color;
+
+    _drawDashedLine(
+      canvas,
+      Offset(boundaries.left, boundaries.top),
+      Offset(boundaries.right, boundaries.top),
+      paint,
+    );
+
+    _drawDashedLine(
+      canvas,
+      Offset(boundaries.left, boundaries.bottom),
+      Offset(boundaries.right, boundaries.bottom),
+      paint,
+    );
+
+    _drawDashedLine(
+      canvas,
+      Offset(boundaries.right, boundaries.top),
+      Offset(boundaries.right, boundaries.bottom),
+      paint,
+    );
+
+    _drawDashedLine(
+      canvas,
+      Offset(boundaries.left, boundaries.top),
+      Offset(boundaries.left, boundaries.bottom),
+      paint,
+    );
   }
 
   void _drawHandles(Canvas canvas, Rect boundaries) {
@@ -780,6 +826,31 @@ class _CropPainter extends CustomPainter {
       ),
       paint,
     );
+  }
+
+  void _drawDashedLine(
+    Canvas canvas,
+    Offset p1,
+    Offset p2,
+    Paint paint, {
+    Iterable<double>? pattern,
+  }) {
+    assert(pattern == null || pattern.length.isEven);
+    final distance = (p2 - p1).distance;
+    final _pattern = pattern ?? [10, 10];
+    final normalizedPattern =
+        _pattern.map((width) => width / distance).toList();
+    final points = <Offset>[];
+    double t = 0;
+    int i = 0;
+    while (t < 1) {
+      points.add(Offset.lerp(p1, p2, t)!);
+      t += normalizedPattern[i++];
+      points.add(Offset.lerp(p1, p2, t.clamp(0, 1))!);
+      t += normalizedPattern[i++];
+      i %= normalizedPattern.length;
+    }
+    canvas.drawPoints(ui.PointMode.lines, points, paint);
   }
 
   void _drawGrid(Canvas canvas, Rect boundaries) {
