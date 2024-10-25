@@ -24,9 +24,9 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   final cropKey = GlobalKey<CropState>();
-  late File? _file;
-  late File? _sample;
-  late File? _lastCropped;
+  File? _file;
+  File? _sample;
+  File? _lastCropped;
 
   @override
   void dispose() {
