@@ -34,7 +34,7 @@ class Crop extends StatefulWidget {
     this.border,
   }) : super(key: key);
 
-  Crop.file(
+   Crop.file(
     File file, {
     Key? key,
     double scale = 1.0,
@@ -183,32 +183,38 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
   }
 
   @override
-  Widget build(BuildContext context) => ConstrainedBox(
-        constraints: const BoxConstraints.expand(),
-        child: Listener(
-          onPointerDown: (event) => pointers++,
-          onPointerUp: (event) => pointers = 0,
-          child: GestureDetector(
-            key: _surfaceKey,
-            behavior: HitTestBehavior.opaque,
-            onScaleStart: _isEnabled ? _handleScaleStart : null,
-            onScaleUpdate: _isEnabled ? _handleScaleUpdate : null,
-            onScaleEnd: _isEnabled ? _handleScaleEnd : null,
-            child: CustomPaint(
-              painter: _CropPainter(
-                image: _image,
-                ratio: _ratio,
-                view: _view,
-                area: _area,
-                scale: _scale,
-                active: _activeController.value,
-                rotationDegree: widget.rotationDegree,
-                border: widget.border,
-              ),
-            ),
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints.expand(),
+      child: Listener(
+        onPointerDown: (event) => pointers++,
+        onPointerUp: (event) => pointers = 0,
+        child: GestureDetector(
+          key: _surfaceKey,
+          behavior: HitTestBehavior.opaque,
+          onScaleStart: _isEnabled ? _handleScaleStart : null,
+          onScaleUpdate: _isEnabled ? _handleScaleUpdate : null,
+          onScaleEnd: _isEnabled ? _handleScaleEnd : null,
+          child: Builder(
+            builder: (context) {
+              return CustomPaint(
+                painter: _CropPainter(
+                  image: _image,
+                  ratio: _ratio,
+                  view: _view,
+                  area: _area,
+                  scale: _scale,
+                  active: _activeController.value,
+                  rotationDegree: widget.rotationDegree,
+                  border: widget.border,
+                ),
+              );
+            },
           ),
         ),
-      );
+      ),
+    );
+  }
 
   void _activate() {
     _activeController.animateTo(
@@ -400,7 +406,7 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
     _settleController.stop(canceled: false);
     _lastFocalPoint = details.focalPoint;
     _action = _CropAction.none;
-    _handle = _hitCropHandle(_getLocalPoint(details.focalPoint));
+    //    _handle = _hitCropHandle(_getLocalPoint(details.focalPoint));
     _startScale = _scale;
     _startView = _view;
   }
@@ -672,7 +678,9 @@ class _CropPainter extends CustomPainter {
         oldDelegate.area != area ||
         oldDelegate.active != active ||
         oldDelegate.scale != scale ||
-        oldDelegate.border != border;
+        oldDelegate.border != border ||
+        oldDelegate.rotationDegree != rotationDegree;
+  
   }
 
   @override
@@ -687,7 +695,9 @@ class _CropPainter extends CustomPainter {
     canvas.save();
     canvas.translate(rect.left, rect.top);
 
-    final paint = Paint()..isAntiAlias = false;
+    final paint = Paint()
+      ..isAntiAlias = true
+      ..blendMode = BlendMode.srcIn;
 
     final image = this.image;
     if (image != null) {
@@ -704,15 +714,15 @@ class _CropPainter extends CustomPainter {
         image.height * scale * ratio,
       );
 
+      final degree = rotationDegree * pi / 180;
       canvas.save();
       canvas.translate(rect.width / 2, rect.height / 2);
-      canvas.rotate(rotationDegree * pi / 180);
+      canvas.rotate(degree);
       canvas.translate(-rect.width / 2, -rect.height / 2);
       canvas.clipRect(Rect.fromLTWH(0.0, 0.0, rect.width, rect.height));
       canvas.drawImageRect(image, src, dst, paint);
       canvas.restore();
-    }
-
+    } 
     paint.color = Color.fromRGBO(
         0x0,
         0x0,
@@ -738,119 +748,9 @@ class _CropPainter extends CustomPainter {
 
     if (boundaries.isEmpty == false) {
       _drawGrid(canvas, boundaries);
-      if (border != null)
-        _drawDashedLines(canvas, boundaries);
-      else
-        _drawHandles(canvas, boundaries);
     }
 
     canvas.restore();
-  }
-
-  void _drawDashedLines(Canvas canvas, Rect boundaries) {
-    final paint = Paint()
-      ..isAntiAlias = true
-      ..strokeWidth = border!.width
-      ..color = border!.color;
-
-    _drawDashedLine(
-      canvas,
-      Offset(boundaries.left, boundaries.top),
-      Offset(boundaries.right, boundaries.top),
-      paint,
-    );
-
-    _drawDashedLine(
-      canvas,
-      Offset(boundaries.left, boundaries.bottom),
-      Offset(boundaries.right, boundaries.bottom),
-      paint,
-    );
-
-    _drawDashedLine(
-      canvas,
-      Offset(boundaries.right, boundaries.top),
-      Offset(boundaries.right, boundaries.bottom),
-      paint,
-    );
-
-    _drawDashedLine(
-      canvas,
-      Offset(boundaries.left, boundaries.top),
-      Offset(boundaries.left, boundaries.bottom),
-      paint,
-    );
-  }
-
-  void _drawHandles(Canvas canvas, Rect boundaries) {
-    final paint = Paint()
-      ..isAntiAlias = true
-      ..color = _kCropHandleColor;
-
-    canvas.drawOval(
-      Rect.fromLTWH(
-        boundaries.left - _kCropHandleSize / 2,
-        boundaries.top - _kCropHandleSize / 2,
-        _kCropHandleSize,
-        _kCropHandleSize,
-      ),
-      paint,
-    );
-
-    canvas.drawOval(
-      Rect.fromLTWH(
-        boundaries.right - _kCropHandleSize / 2,
-        boundaries.top - _kCropHandleSize / 2,
-        _kCropHandleSize,
-        _kCropHandleSize,
-      ),
-      paint,
-    );
-
-    canvas.drawOval(
-      Rect.fromLTWH(
-        boundaries.right - _kCropHandleSize / 2,
-        boundaries.bottom - _kCropHandleSize / 2,
-        _kCropHandleSize,
-        _kCropHandleSize,
-      ),
-      paint,
-    );
-
-    canvas.drawOval(
-      Rect.fromLTWH(
-        boundaries.left - _kCropHandleSize / 2,
-        boundaries.bottom - _kCropHandleSize / 2,
-        _kCropHandleSize,
-        _kCropHandleSize,
-      ),
-      paint,
-    );
-  }
-
-  void _drawDashedLine(
-    Canvas canvas,
-    Offset p1,
-    Offset p2,
-    Paint paint, {
-    Iterable<double>? pattern,
-  }) {
-    assert(pattern == null || pattern.length.isEven);
-    final distance = (p2 - p1).distance;
-    final _pattern = pattern ?? [10, 10];
-    final normalizedPattern =
-        _pattern.map((width) => width / distance).toList();
-    final points = <Offset>[];
-    double t = 0;
-    int i = 0;
-    while (t < 1) {
-      points.add(Offset.lerp(p1, p2, t)!);
-      t += normalizedPattern[i++];
-      points.add(Offset.lerp(p1, p2, t.clamp(0, 1))!);
-      t += normalizedPattern[i++];
-      i %= normalizedPattern.length;
-    }
-    canvas.drawPoints(ui.PointMode.lines, points, paint);
   }
 
   void _drawGrid(Canvas canvas, Rect boundaries) {
