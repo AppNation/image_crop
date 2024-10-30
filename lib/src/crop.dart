@@ -24,6 +24,8 @@ class Crop extends StatefulWidget {
   final BorderSide? border;
   final bool shownDashedBorder;
   final bool canDragGrid;
+  final bool clipImageByGrid; // Image does not appear outside the grid if true
+  final bool animateToNewAspectRatio;
 
   const Crop({
     Key? key,
@@ -36,6 +38,8 @@ class Crop extends StatefulWidget {
     this.border,
     this.shownDashedBorder = true,
     this.canDragGrid = true,
+    this.clipImageByGrid = false,
+    this.animateToNewAspectRatio = false,
   }) : super(key: key);
 
   Crop.file(
@@ -50,6 +54,8 @@ class Crop extends StatefulWidget {
     this.border,
     this.shownDashedBorder = true,
     this.canDragGrid = true,
+    this.clipImageByGrid = false,
+    this.animateToNewAspectRatio = false,
   })  : image = FileImage(file, scale: scale),
         super(key: key);
 
@@ -66,6 +72,8 @@ class Crop extends StatefulWidget {
     this.border,
     this.shownDashedBorder = true,
     this.canDragGrid = true,
+    this.clipImageByGrid = false,
+    this.animateToNewAspectRatio = false,
   })  : image = AssetImage(assetName, bundle: bundle, package: package),
         super(key: key);
 
@@ -170,12 +178,19 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
 
     if (widget.image != oldWidget.image) {
       _getImage();
-    }
-
-    if (widget.aspectRatio != oldWidget.aspectRatio) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _animateToNewAspectRatio();
-      });
+    } else if (widget.aspectRatio != oldWidget.aspectRatio) {
+      if (widget.animateToNewAspectRatio) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _animateToNewAspectRatio();
+        });
+      } else {
+        _area = _calculateDefaultArea(
+          viewWidth: _view.width,
+          viewHeight: _view.height,
+          imageWidth: _image?.width,
+          imageHeight: _image?.height,
+        );
+      }
     }
 
     if (widget.alwaysShowGrid != oldWidget.alwaysShowGrid) {
@@ -257,22 +272,19 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
           onScaleStart: _isEnabled ? _handleScaleStart : null,
           onScaleUpdate: _isEnabled ? _handleScaleUpdate : null,
           onScaleEnd: _isEnabled ? _handleScaleEnd : null,
-          child: Builder(
-            builder: (context) {
-              return CustomPaint(
-                painter: _CropPainter(
-                  image: _image,
-                  ratio: _ratio,
-                  view: _view,
-                  area: _area,
-                  scale: _scale,
-                  active: _activeController.value,
-                  rotationDegree: widget.rotationDegree,
-                  border: widget.border,
-                  isShownDashedBorder: widget.shownDashedBorder,
-                ),
-              );
-            },
+          child: CustomPaint(
+            painter: _CropPainter(
+              image: _image,
+              ratio: _ratio,
+              view: _view,
+              area: _area,
+              scale: _scale,
+              active: _activeController.value,
+              rotationDegree: widget.rotationDegree,
+              border: widget.border,
+              isShownDashedBorder: widget.shownDashedBorder,
+              clipImageByGrid: widget.clipImageByGrid,
+            ),
           ),
         ),
       ),
@@ -725,6 +737,7 @@ class _CropPainter extends CustomPainter {
   final int rotationDegree;
   final BorderSide? border;
   final bool isShownDashedBorder;
+  final bool clipImageByGrid;
 
   _CropPainter({
     required this.image,
@@ -736,6 +749,7 @@ class _CropPainter extends CustomPainter {
     required this.rotationDegree,
     this.border,
     this.isShownDashedBorder = true,
+    this.clipImageByGrid = false,
   });
 
   @override
@@ -762,9 +776,15 @@ class _CropPainter extends CustomPainter {
     canvas.save();
     canvas.translate(rect.left, rect.top);
 
-    final paint = Paint()
-      ..isAntiAlias = true
-      ..blendMode = BlendMode.srcIn;
+    Paint paint;
+
+    if (clipImageByGrid) {
+      paint = Paint()
+        ..isAntiAlias = true
+        ..blendMode = BlendMode.srcIn;
+    } else {
+      paint = Paint()..isAntiAlias = false;
+    }
 
     final image = this.image;
     if (image != null) {
@@ -782,20 +802,24 @@ class _CropPainter extends CustomPainter {
         image.height * scale * ratio,
       );
 
-      final degree = rotationDegree * pi / 180;
       canvas.save();
       canvas.translate(rect.width / 2, rect.height / 2);
-      canvas.rotate(degree);
+      canvas.rotate(rotationDegree * pi / 180);
       canvas.translate(-rect.width / 2, -rect.height / 2);
 
-      final boundaries = Rect.fromLTWH(
-        rect.width * area.left,
-        rect.height * area.top,
-        rect.width * area.width,
-        rect.height * area.height,
-      );
+      if (clipImageByGrid) {
+        final boundaries = Rect.fromLTWH(
+          rect.width * area.left,
+          rect.height * area.top,
+          rect.width * area.width,
+          rect.height * area.height,
+        );
 
-      canvas.clipRect(boundaries);
+        canvas.clipRect(boundaries);
+      } else {
+        canvas.clipRect(Rect.fromLTWH(0.0, 0.0, rect.width, rect.height));
+      }
+
       canvas.drawImageRect(image, src, dst, paint);
       canvas.restore();
     }
