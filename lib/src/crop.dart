@@ -99,6 +99,7 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
   _CropHandleSide _handle = _CropHandleSide.none;
 
   late double _startScale;
+  double minScale = 1.0;
   late Rect _startView;
   late Tween<Rect?> _viewTween;
   late Tween<double> _scaleTween;
@@ -178,7 +179,8 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
 
     if (widget.image != oldWidget.image) {
       _getImage();
-    } else if (widget.aspectRatio != oldWidget.aspectRatio) {
+    } else if (widget.aspectRatio != oldWidget.aspectRatio ||
+        widget.rotationDegree != oldWidget.rotationDegree) {
       if (widget.animateToNewAspectRatio) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _animateToNewAspectRatio();
@@ -211,12 +213,14 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
     final oldView = _view;
     final oldArea = _area;
 
-    _scale = 1.0;
-
     _ratio = max(
       boundaries.width / _image!.width,
       boundaries.height / _image!.height,
     );
+
+    _scale = 1.0;
+
+    _scaleUpdate(boundaries);
 
     final newViewWidth = boundaries.width / (_image!.width * _scale * _ratio);
     final newViewHeight =
@@ -240,6 +244,21 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
     _areaTween = RectTween(begin: oldArea, end: newArea);
 
     _aspectAnimationController.forward(from: 0.0);
+  }
+
+  void _scaleUpdate(ui.Size boundaries) {
+    if (widget.rotationDegree % 180 != 0) {
+      final minScaleX =
+          boundaries.width / (_image!.width * _ratio * widget.aspectRatio!);
+      final minScaleY =
+          boundaries.height / (_image!.height * _ratio * widget.aspectRatio!);
+
+      _scale = max(minScaleX, minScaleY);
+
+      minScale = _scale;
+    } else {
+      _scale = 1.0;
+    }
   }
 
   void _getImage({bool force = false}) {
@@ -356,6 +375,7 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
 
     double height;
     double width;
+
     if ((widget.aspectRatio ?? 1.0) < 1) {
       height = 1.0;
       width =
@@ -407,6 +427,7 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
 
         final viewWidth = boundaries.width / (image.width * _scale * _ratio);
         final viewHeight = boundaries.height / (image.height * _scale * _ratio);
+
         _area = _calculateDefaultArea(
           viewWidth: viewWidth,
           viewHeight: viewHeight,
@@ -646,6 +667,10 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
       }
     }
 
+    if (minScale > details.scale) {
+      return;
+    }
+
     if (_action == _CropAction.cropping) {
       final boundaries = _boundaries;
       if (boundaries == null) {
@@ -803,22 +828,15 @@ class _CropPainter extends CustomPainter {
       );
 
       canvas.save();
+
+      final clipRectBoundary = Rect.fromLTWH(0, 0, rect.width, rect.height);
+      if (clipOutsideGrid) {
+        canvas.clipRect(clipRectBoundary);
+      }
+
       canvas.translate(rect.width / 2, rect.height / 2);
       canvas.rotate(rotationDegree * pi / 180);
       canvas.translate(-rect.width / 2, -rect.height / 2);
-
-      if (clipOutsideGrid) {
-        final boundaries = Rect.fromLTWH(
-          rect.width * area.left,
-          rect.height * area.top,
-          rect.width * area.width,
-          rect.height * area.height,
-        );
-
-        canvas.clipRect(boundaries);
-      } else {
-        canvas.clipRect(Rect.fromLTWH(0.0, 0.0, rect.width, rect.height));
-      }
 
       canvas.drawImageRect(image, src, dst, paint);
       canvas.restore();
