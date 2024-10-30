@@ -22,6 +22,8 @@ class Crop extends StatefulWidget {
   final ImageErrorListener? onImageError;
   final int rotationDegree;
   final BorderSide? border;
+  final bool shownDashedBorder;
+  final bool canDragGrid;
 
   const Crop({
     Key? key,
@@ -32,9 +34,11 @@ class Crop extends StatefulWidget {
     this.onImageError,
     this.rotationDegree = 0,
     this.border,
+    this.shownDashedBorder = true,
+    this.canDragGrid = true,
   }) : super(key: key);
 
-   Crop.file(
+  Crop.file(
     File file, {
     Key? key,
     double scale = 1.0,
@@ -44,6 +48,8 @@ class Crop extends StatefulWidget {
     this.onImageError,
     this.rotationDegree = 0,
     this.border,
+    this.shownDashedBorder = true,
+    this.canDragGrid = true,
   })  : image = FileImage(file, scale: scale),
         super(key: key);
 
@@ -58,6 +64,8 @@ class Crop extends StatefulWidget {
     this.onImageError,
     this.rotationDegree = 0,
     this.border,
+    this.shownDashedBorder = true,
+    this.canDragGrid = true,
   })  : image = AssetImage(assetName, bundle: bundle, package: package),
         super(key: key);
 
@@ -86,6 +94,8 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
   late Rect _startView;
   late Tween<Rect?> _viewTween;
   late Tween<double> _scaleTween;
+  late Tween<Rect?> _areaTween;
+  late AnimationController _aspectAnimationController;
 
   ImageStream? _imageStream;
   ui.Image? _image;
@@ -118,8 +128,19 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
       vsync: this,
       value: widget.alwaysShowGrid ? 1.0 : 0.0,
     )..addListener(() => setState(() {}));
+
     _settleController = AnimationController(vsync: this)
       ..addListener(_settleAnimationChanged);
+
+    _aspectAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    )..addListener(() {
+        setState(() {
+          _view = _viewTween.evaluate(_aspectAnimationController)!;
+          _area = _areaTween.evaluate(_aspectAnimationController)!;
+        });
+      });
   }
 
   @override
@@ -130,6 +151,7 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
     }
     _activeController.dispose();
     _settleController.dispose();
+    _aspectAnimationController.dispose();
 
     super.dispose();
   }
@@ -148,14 +170,14 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
 
     if (widget.image != oldWidget.image) {
       _getImage();
-    } else if (widget.aspectRatio != oldWidget.aspectRatio) {
-      _area = _calculateDefaultArea(
-        viewWidth: _view.width,
-        viewHeight: _view.height,
-        imageWidth: _image?.width,
-        imageHeight: _image?.height,
-      );
     }
+
+    if (widget.aspectRatio != oldWidget.aspectRatio) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _animateToNewAspectRatio();
+      });
+    }
+
     if (widget.alwaysShowGrid != oldWidget.alwaysShowGrid) {
       if (widget.alwaysShowGrid) {
         _activate();
@@ -163,6 +185,46 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
         _deactivate();
       }
     }
+  }
+
+  void _animateToNewAspectRatio() {
+    final boundaries = _boundaries;
+    if (boundaries == null || _image == null) {
+      return;
+    }
+
+    final oldView = _view;
+    final oldArea = _area;
+
+    _scale = 1.0;
+
+    _ratio = max(
+      boundaries.width / _image!.width,
+      boundaries.height / _image!.height,
+    );
+
+    final newViewWidth = boundaries.width / (_image!.width * _scale * _ratio);
+    final newViewHeight =
+        boundaries.height / (_image!.height * _scale * _ratio);
+
+    final newView = Rect.fromLTWH(
+      (newViewWidth - 1.0) / 2,
+      (newViewHeight - 1.0) / 2,
+      newViewWidth,
+      newViewHeight,
+    );
+
+    final newArea = _calculateDefaultArea(
+      viewWidth: newViewWidth,
+      viewHeight: newViewHeight,
+      imageWidth: _image!.width,
+      imageHeight: _image!.height,
+    );
+
+    _viewTween = RectTween(begin: oldView, end: newView);
+    _areaTween = RectTween(begin: oldArea, end: newArea);
+
+    _aspectAnimationController.forward(from: 0.0);
   }
 
   void _getImage({bool force = false}) {
@@ -207,6 +269,7 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
                   active: _activeController.value,
                   rotationDegree: widget.rotationDegree,
                   border: widget.border,
+                  isShownDashedBorder: widget.shownDashedBorder,
                 ),
               );
             },
@@ -324,6 +387,7 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
       setState(() {
         _image = image;
         _scale = imageInfo.scale;
+
         _ratio = max(
           boundaries.width / image.width,
           boundaries.height / image.height,
@@ -406,7 +470,9 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
     _settleController.stop(canceled: false);
     _lastFocalPoint = details.focalPoint;
     _action = _CropAction.none;
-    //    _handle = _hitCropHandle(_getLocalPoint(details.focalPoint));
+    if (widget.canDragGrid) {
+      _handle = _hitCropHandle(_getLocalPoint(details.focalPoint));
+    }
     _startScale = _scale;
     _startView = _view;
   }
@@ -658,6 +724,7 @@ class _CropPainter extends CustomPainter {
   final double active;
   final int rotationDegree;
   final BorderSide? border;
+  final bool isShownDashedBorder;
 
   _CropPainter({
     required this.image,
@@ -668,6 +735,7 @@ class _CropPainter extends CustomPainter {
     required this.active,
     required this.rotationDegree,
     this.border,
+    this.isShownDashedBorder = true,
   });
 
   @override
@@ -680,7 +748,6 @@ class _CropPainter extends CustomPainter {
         oldDelegate.scale != scale ||
         oldDelegate.border != border ||
         oldDelegate.rotationDegree != rotationDegree;
-  
   }
 
   @override
@@ -707,6 +774,7 @@ class _CropPainter extends CustomPainter {
         image.width.toDouble(),
         image.height.toDouble(),
       );
+
       final dst = Rect.fromLTWH(
         view.left * image.width * scale * ratio,
         view.top * image.height * scale * ratio,
@@ -719,22 +787,33 @@ class _CropPainter extends CustomPainter {
       canvas.translate(rect.width / 2, rect.height / 2);
       canvas.rotate(degree);
       canvas.translate(-rect.width / 2, -rect.height / 2);
-      canvas.clipRect(Rect.fromLTWH(0.0, 0.0, rect.width, rect.height));
+
+      final boundaries = Rect.fromLTWH(
+        rect.width * area.left,
+        rect.height * area.top,
+        rect.width * area.width,
+        rect.height * area.height,
+      );
+
+      canvas.clipRect(boundaries);
       canvas.drawImageRect(image, src, dst, paint);
       canvas.restore();
-    } 
+    }
+
     paint.color = Color.fromRGBO(
         0x0,
         0x0,
         0x0,
         _kCropOverlayActiveOpacity * active +
             _kCropOverlayInactiveOpacity * (1.0 - active));
+
     final boundaries = Rect.fromLTWH(
       rect.width * area.left,
       rect.height * area.top,
       rect.width * area.width,
       rect.height * area.height,
     );
+
     canvas.drawRect(Rect.fromLTRB(0.0, 0.0, rect.width, boundaries.top), paint);
     canvas.drawRect(
         Rect.fromLTRB(0.0, boundaries.bottom, rect.width, rect.height), paint);
@@ -748,9 +827,114 @@ class _CropPainter extends CustomPainter {
 
     if (boundaries.isEmpty == false) {
       _drawGrid(canvas, boundaries);
+
+      if (isShownDashedBorder) {
+        if (border != null)
+          _drawDashedLines(canvas, boundaries);
+        else
+          _drawHandles(canvas, boundaries);
+      }
     }
 
     canvas.restore();
+  }
+
+  void _drawDashedLines(Canvas canvas, Rect boundaries) {
+    final paint = Paint()
+      ..isAntiAlias = true
+      ..strokeWidth = border!.width
+      ..color = border!.color;
+    _drawDashedLine(
+      canvas,
+      Offset(boundaries.left, boundaries.top),
+      Offset(boundaries.right, boundaries.top),
+      paint,
+    );
+    _drawDashedLine(
+      canvas,
+      Offset(boundaries.left, boundaries.bottom),
+      Offset(boundaries.right, boundaries.bottom),
+      paint,
+    );
+    _drawDashedLine(
+      canvas,
+      Offset(boundaries.right, boundaries.top),
+      Offset(boundaries.right, boundaries.bottom),
+      paint,
+    );
+    _drawDashedLine(
+      canvas,
+      Offset(boundaries.left, boundaries.top),
+      Offset(boundaries.left, boundaries.bottom),
+      paint,
+    );
+  }
+
+  void _drawHandles(Canvas canvas, Rect boundaries) {
+    final paint = Paint()
+      ..isAntiAlias = true
+      ..color = _kCropHandleColor;
+    canvas.drawOval(
+      Rect.fromLTWH(
+        boundaries.left - _kCropHandleSize / 2,
+        boundaries.top - _kCropHandleSize / 2,
+        _kCropHandleSize,
+        _kCropHandleSize,
+      ),
+      paint,
+    );
+    canvas.drawOval(
+      Rect.fromLTWH(
+        boundaries.right - _kCropHandleSize / 2,
+        boundaries.top - _kCropHandleSize / 2,
+        _kCropHandleSize,
+        _kCropHandleSize,
+      ),
+      paint,
+    );
+    canvas.drawOval(
+      Rect.fromLTWH(
+        boundaries.right - _kCropHandleSize / 2,
+        boundaries.bottom - _kCropHandleSize / 2,
+        _kCropHandleSize,
+        _kCropHandleSize,
+      ),
+      paint,
+    );
+    canvas.drawOval(
+      Rect.fromLTWH(
+        boundaries.left - _kCropHandleSize / 2,
+        boundaries.bottom - _kCropHandleSize / 2,
+        _kCropHandleSize,
+        _kCropHandleSize,
+      ),
+      paint,
+    );
+  }
+
+  void _drawDashedLine(
+    Canvas canvas,
+    Offset p1,
+    Offset p2,
+    Paint paint, {
+    Iterable<double>? pattern,
+  }) {
+    assert(pattern == null || pattern.length.isEven);
+    final distance = (p2 - p1).distance;
+    final _pattern = pattern ?? [10, 10];
+    final normalizedPattern =
+        _pattern.map((width) => width / distance).toList();
+    final points = <Offset>[];
+    double t = 0;
+    int i = 0;
+    while (t < 1) {
+      points.add(Offset.lerp(p1, p2, t)!);
+      t += normalizedPattern[i++];
+      points.add(Offset.lerp(p1, p2, t.clamp(0, 1))!);
+      t += normalizedPattern[i++];
+      i %= normalizedPattern.length;
+    }
+    canvas.drawPoints(ui.PointMode.lines, points, paint);
   }
 
   void _drawGrid(Canvas canvas, Rect boundaries) {
