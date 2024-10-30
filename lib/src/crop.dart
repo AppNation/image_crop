@@ -24,7 +24,7 @@ class Crop extends StatefulWidget {
   final BorderSide? border;
   final bool shownDashedBorder;
   final bool canDragGrid;
-  final bool clipImageByGrid; // Image does not appear outside the grid if true
+  final bool clipOutsideGrid; // Image does not appear outside the grid if true
   final bool animateToNewAspectRatio;
 
   const Crop({
@@ -38,7 +38,7 @@ class Crop extends StatefulWidget {
     this.border,
     this.shownDashedBorder = true,
     this.canDragGrid = true,
-    this.clipImageByGrid = false,
+    this.clipOutsideGrid = false,
     this.animateToNewAspectRatio = false,
   }) : super(key: key);
 
@@ -54,7 +54,7 @@ class Crop extends StatefulWidget {
     this.border,
     this.shownDashedBorder = true,
     this.canDragGrid = true,
-    this.clipImageByGrid = false,
+    this.clipOutsideGrid = false,
     this.animateToNewAspectRatio = false,
   })  : image = FileImage(file, scale: scale),
         super(key: key);
@@ -72,7 +72,7 @@ class Crop extends StatefulWidget {
     this.border,
     this.shownDashedBorder = true,
     this.canDragGrid = true,
-    this.clipImageByGrid = false,
+    this.clipOutsideGrid = false,
     this.animateToNewAspectRatio = false,
   })  : image = AssetImage(assetName, bundle: bundle, package: package),
         super(key: key);
@@ -283,7 +283,7 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
               rotationDegree: widget.rotationDegree,
               border: widget.border,
               isShownDashedBorder: widget.shownDashedBorder,
-              clipImageByGrid: widget.clipImageByGrid,
+              clipOutsideGrid: widget.clipOutsideGrid,
             ),
           ),
         ),
@@ -737,7 +737,7 @@ class _CropPainter extends CustomPainter {
   final int rotationDegree;
   final BorderSide? border;
   final bool isShownDashedBorder;
-  final bool clipImageByGrid;
+  final bool clipOutsideGrid;
 
   _CropPainter({
     required this.image,
@@ -749,7 +749,7 @@ class _CropPainter extends CustomPainter {
     required this.rotationDegree,
     this.border,
     this.isShownDashedBorder = true,
-    this.clipImageByGrid = false,
+    this.clipOutsideGrid = false,
   });
 
   @override
@@ -778,7 +778,7 @@ class _CropPainter extends CustomPainter {
 
     Paint paint;
 
-    if (clipImageByGrid) {
+    if (clipOutsideGrid) {
       paint = Paint()
         ..isAntiAlias = true
         ..blendMode = BlendMode.srcIn;
@@ -807,7 +807,7 @@ class _CropPainter extends CustomPainter {
       canvas.rotate(rotationDegree * pi / 180);
       canvas.translate(-rect.width / 2, -rect.height / 2);
 
-      if (clipImageByGrid) {
+      if (clipOutsideGrid) {
         final boundaries = Rect.fromLTWH(
           rect.width * area.left,
           rect.height * area.top,
