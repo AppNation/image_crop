@@ -26,6 +26,7 @@ class Crop extends StatefulWidget {
   final bool canDragGrid;
   final bool clipOutsideGrid; // Image does not appear outside the grid if true
   final bool animateToNewAspectRatio;
+  final bool isLandscape;
 
   const Crop({
     Key? key,
@@ -40,6 +41,7 @@ class Crop extends StatefulWidget {
     this.canDragGrid = true,
     this.clipOutsideGrid = false,
     this.animateToNewAspectRatio = false,
+    this.isLandscape = false,
   }) : super(key: key);
 
   Crop.file(
@@ -56,6 +58,7 @@ class Crop extends StatefulWidget {
     this.canDragGrid = true,
     this.clipOutsideGrid = false,
     this.animateToNewAspectRatio = false,
+    this.isLandscape = false,
   })  : image = FileImage(file, scale: scale),
         super(key: key);
 
@@ -74,6 +77,7 @@ class Crop extends StatefulWidget {
     this.canDragGrid = true,
     this.clipOutsideGrid = false,
     this.animateToNewAspectRatio = false,
+    this.isLandscape = false,
   })  : image = AssetImage(assetName, bundle: bundle, package: package),
         super(key: key);
 
@@ -92,6 +96,7 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
 
   double _scale = 1.0;
   double _ratio = 1.0;
+  double _minScale = 1.0;
   Rect _view = Rect.zero;
   Rect _area = Rect.zero;
   Offset _lastFocalPoint = Offset.zero;
@@ -99,7 +104,6 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
   _CropHandleSide _handle = _CropHandleSide.none;
 
   late double _startScale;
-  double minScale = 1.0;
   late Rect _startView;
   late Tween<Rect?> _viewTween;
   late Tween<double> _scaleTween;
@@ -143,11 +147,12 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
 
     _aspectAnimationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 300),
+      duration: const Duration(milliseconds: 400),
     )..addListener(() {
         setState(() {
           _view = _viewTween.evaluate(_aspectAnimationController)!;
           _area = _areaTween.evaluate(_aspectAnimationController)!;
+          _scale = _scaleTween.evaluate(_aspectAnimationController);
         });
       });
   }
@@ -179,8 +184,7 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
 
     if (widget.image != oldWidget.image) {
       _getImage();
-    } else if (widget.aspectRatio != oldWidget.aspectRatio ||
-        widget.rotationDegree != oldWidget.rotationDegree) {
+    } else if (widget.aspectRatio != oldWidget.aspectRatio) {
       if (widget.animateToNewAspectRatio) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _animateToNewAspectRatio();
@@ -218,8 +222,6 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
       boundaries.height / _image!.height,
     );
 
-    _scale = 1.0;
-
     _scaleUpdate(boundaries);
 
     final newViewWidth = boundaries.width / (_image!.width * _scale * _ratio);
@@ -247,18 +249,23 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
   }
 
   void _scaleUpdate(ui.Size boundaries) {
-    if (widget.rotationDegree % 180 != 0) {
+    final oldScale = _scale;
+
+    if (widget.aspectRatio! < 1 &&
+        !widget.isLandscape &&
+        widget.rotationDegree % 180 != 0) {
       final minScaleX =
           boundaries.width / (_image!.width * _ratio * widget.aspectRatio!);
       final minScaleY =
           boundaries.height / (_image!.height * _ratio * widget.aspectRatio!);
 
       _scale = max(minScaleX, minScaleY);
-
-      minScale = _scale;
+      _minScale = min(minScaleX, minScaleY);
     } else {
       _scale = 1.0;
+      _minScale = 1.0;
     }
+    _scaleTween = Tween<double>(begin: oldScale, end: _scale);
   }
 
   void _getImage({bool force = false}) {
@@ -303,6 +310,8 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
               border: widget.border,
               isShownDashedBorder: widget.shownDashedBorder,
               clipOutsideGrid: widget.clipOutsideGrid,
+              isLandscape: widget.isLandscape,
+              aspectRatio: widget.aspectRatio ?? 1.0,
             ),
           ),
         ),
@@ -510,24 +519,59 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
     _startView = _view;
   }
 
-  Rect _getViewInBoundaries(double scale) =>
-      Offset(
-        max(
-          min(
-            _view.left,
-            _area.left * _view.width / scale,
-          ),
-          _area.right * _view.width / scale - 1.0,
-        ),
-        max(
-          min(
-            _view.top,
-            _area.top * _view.height / scale,
-          ),
-          _area.bottom * _view.height / scale - 1.0,
-        ),
-      ) &
-      _view.size;
+  Rect _getViewInBoundaries(double scale) {
+    final xMinOffset = min(
+      max(
+        _view.left,
+        _area.left * _view.width / scale,
+      ),
+      _area.right * _view.width / scale - 1.0,
+    );
+
+    final xMaxOffset = max(
+      min(
+        _view.left,
+        _area.right * _view.width / scale - 1.0,
+      ),
+      _area.left * _view.width / scale,
+    );
+
+    final yMinOffset = min(
+      max(
+        _view.top,
+        _area.top * _view.height / scale,
+      ),
+      _area.bottom * _view.height / scale - 1.0,
+    );
+
+    final yMaxOffset = max(
+      min(
+        _view.top,
+        _area.bottom * _view.height / scale - 1.0,
+      ),
+      _area.top * _view.height / scale,
+    );
+
+    if (widget.aspectRatio! < 1) {
+      return Offset(
+            xMinOffset / 2,
+            yMaxOffset,
+          ) &
+          _view.size;
+    } else if (widget.aspectRatio! > 1 && widget.rotationDegree % 180 != 0) {
+      return Offset(
+            xMinOffset,
+            yMinOffset / 2,
+          ) &
+          _view.size;
+    } else {
+      return Offset(
+            xMaxOffset ,
+            yMaxOffset,
+          ) &
+          _view.size;
+    }
+  }
 
   double get _maximumScale => widget.maximumScale;
 
@@ -557,9 +601,10 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
     );
 
     _startView = _view;
+
     _viewTween = RectTween(
       begin: _view,
-      end: _getViewInBoundaries(targetScale),
+      end: _getViewInBoundaries(minimumScale),
     );
 
     _settleController.value = 0.0;
@@ -667,10 +712,6 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
       }
     }
 
-    if (minScale > details.scale) {
-      return;
-    }
-
     if (_action == _CropAction.cropping) {
       final boundaries = _boundaries;
       if (boundaries == null) {
@@ -731,6 +772,10 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
         return;
       }
 
+      if (_minScale > details.scale) {
+        return;
+      }
+
       setState(() {
         _scale = _startScale * details.scale;
 
@@ -763,6 +808,8 @@ class _CropPainter extends CustomPainter {
   final BorderSide? border;
   final bool isShownDashedBorder;
   final bool clipOutsideGrid;
+  final bool isLandscape;
+  final double aspectRatio;
 
   _CropPainter({
     required this.image,
@@ -775,6 +822,8 @@ class _CropPainter extends CustomPainter {
     this.border,
     this.isShownDashedBorder = true,
     this.clipOutsideGrid = false,
+    this.isLandscape = false,
+    this.aspectRatio = 1.0,
   });
 
   @override
@@ -843,11 +892,12 @@ class _CropPainter extends CustomPainter {
     }
 
     paint.color = Color.fromRGBO(
-        0x0,
-        0x0,
-        0x0,
-        _kCropOverlayActiveOpacity * active +
-            _kCropOverlayInactiveOpacity * (1.0 - active));
+      0x0,
+      0x0,
+      0x0,
+      _kCropOverlayActiveOpacity * active +
+          _kCropOverlayInactiveOpacity * (1.0 - active),
+    );
 
     final boundaries = Rect.fromLTWH(
       rect.width * area.left,
