@@ -528,12 +528,12 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
       _area.right * _view.width / scale - 1.0,
     );
 
-    final xMaxOffset = max(
+    final xRealOffset = max(
       min(
         _view.left,
-        _area.right * _view.width / scale - 1.0,
+        _area.left * _view.width / scale,
       ),
-      _area.left * _view.width / scale,
+      _area.right * _view.width / scale - 1.0,
     );
 
     final yRealOffset = max(
@@ -544,25 +544,18 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
       _area.bottom * _view.height / scale - 1.0,
     );
 
-    if (widget.aspectRatio! < 1 && widget.rotationDegree % 180 != 0) {
-      return Offset(
-            xMinOffset / 2,
-            yRealOffset,
-          ) &
-          _view.size;
-    } else if (widget.aspectRatio! > 1 && widget.rotationDegree % 180 != 0) {
-      return Offset(
-            xMinOffset,
-            yRealOffset / 2,
-          ) &
-          _view.size;
-    } else {
-      return Offset(
-            xMaxOffset,
-            yRealOffset,
-          ) &
-          _view.size;
+    double xOffset = xRealOffset;
+    double yOffset = yRealOffset;
+
+    if (widget.rotationDegree % 180 != 0) {
+      if (widget.aspectRatio! < 1) {
+        xOffset = xMinOffset / 2;
+      } else if (widget.aspectRatio! > 1) {
+        yOffset = yRealOffset / 2;
+      }
     }
+
+    return Offset(xOffset, yOffset) & _view.size;
   }
 
   double get _maximumScale => widget.maximumScale;
@@ -596,7 +589,9 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
 
     _viewTween = RectTween(
       begin: _view,
-      end: _getViewInBoundaries(minimumScale),
+      end: _getViewInBoundaries(
+        widget.isLandscape ? targetScale : minimumScale,
+      ),
     );
 
     _settleController.value = 0.0;
