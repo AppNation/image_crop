@@ -536,38 +536,30 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
       _area.left * _view.width / scale,
     );
 
-    final yMinOffset = min(
-      max(
+    final yRealOffset = max(
+      min(
         _view.top,
         _area.top * _view.height / scale,
       ),
       _area.bottom * _view.height / scale - 1.0,
     );
 
-    final yMaxOffset = max(
-      min(
-        _view.top,
-        _area.bottom * _view.height / scale - 1.0,
-      ),
-      _area.top * _view.height / scale,
-    );
-
-    if (widget.aspectRatio! < 1) {
+    if (widget.aspectRatio! < 1 && widget.rotationDegree % 180 != 0) {
       return Offset(
             xMinOffset / 2,
-            yMaxOffset,
+            yRealOffset,
           ) &
           _view.size;
     } else if (widget.aspectRatio! > 1 && widget.rotationDegree % 180 != 0) {
       return Offset(
             xMinOffset,
-            yMinOffset / 2,
+            yRealOffset / 2,
           ) &
           _view.size;
     } else {
       return Offset(
-            xMaxOffset ,
-            yMaxOffset,
+            xMaxOffset,
+            yRealOffset,
           ) &
           _view.size;
     }
