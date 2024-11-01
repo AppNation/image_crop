@@ -142,11 +142,12 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
 
     _aspectAnimationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 300),
+      duration: const Duration(milliseconds: 400),
     )..addListener(() {
         setState(() {
           _view = _viewTween.evaluate(_aspectAnimationController)!;
           _area = _areaTween.evaluate(_aspectAnimationController)!;
+          _scale = _scaleTween.evaluate(_aspectAnimationController);
         });
       });
   }
@@ -211,12 +212,12 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
     final oldView = _view;
     final oldArea = _area;
 
-    _scale = 1.0;
-
     _ratio = max(
       boundaries.width / _image!.width,
       boundaries.height / _image!.height,
     );
+
+    _scaleUpdate();
 
     final newViewWidth = boundaries.width / (_image!.width * _scale * _ratio);
     final newViewHeight =
@@ -240,6 +241,14 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
     _areaTween = RectTween(begin: oldArea, end: newArea);
 
     _aspectAnimationController.forward(from: 0.0);
+  }
+
+  void _scaleUpdate() {
+    final oldScale = _scale;
+
+    _scale = 1.0;
+
+    _scaleTween = Tween<double>(begin: oldScale, end: _scale);
   }
 
   void _getImage({bool force = false}) {
@@ -356,6 +365,7 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
 
     double height;
     double width;
+
     if ((widget.aspectRatio ?? 1.0) < 1) {
       height = 1.0;
       width =
@@ -407,6 +417,7 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
 
         final viewWidth = boundaries.width / (image.width * _scale * _ratio);
         final viewHeight = boundaries.height / (image.height * _scale * _ratio);
+
         _area = _calculateDefaultArea(
           viewWidth: viewWidth,
           viewHeight: viewHeight,
@@ -536,6 +547,7 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
     );
 
     _startView = _view;
+
     _viewTween = RectTween(
       begin: _view,
       end: _getViewInBoundaries(targetScale),
@@ -803,33 +815,25 @@ class _CropPainter extends CustomPainter {
       );
 
       canvas.save();
+
+      final clipRectBoundary = Rect.fromLTWH(0, 0, rect.width, rect.height);
+      canvas.clipRect(clipRectBoundary);
+
       canvas.translate(rect.width / 2, rect.height / 2);
       canvas.rotate(rotationDegree * pi / 180);
       canvas.translate(-rect.width / 2, -rect.height / 2);
-
-      if (clipOutsideGrid) {
-        final boundaries = Rect.fromLTWH(
-          rect.width * area.left,
-          rect.height * area.top,
-          rect.width * area.width,
-          rect.height * area.height,
-        );
-
-        canvas.clipRect(boundaries);
-      } else {
-        canvas.clipRect(Rect.fromLTWH(0.0, 0.0, rect.width, rect.height));
-      }
 
       canvas.drawImageRect(image, src, dst, paint);
       canvas.restore();
     }
 
     paint.color = Color.fromRGBO(
-        0x0,
-        0x0,
-        0x0,
-        _kCropOverlayActiveOpacity * active +
-            _kCropOverlayInactiveOpacity * (1.0 - active));
+      0x0,
+      0x0,
+      0x0,
+      _kCropOverlayActiveOpacity * active +
+          _kCropOverlayInactiveOpacity * (1.0 - active),
+    );
 
     final boundaries = Rect.fromLTWH(
       rect.width * area.left,
