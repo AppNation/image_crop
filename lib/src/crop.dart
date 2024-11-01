@@ -217,7 +217,7 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
       boundaries.height / _image!.height,
     );
 
-    _scaleUpdate(boundaries);
+    _scaleUpdate();
 
     final newViewWidth = boundaries.width / (_image!.width * _scale * _ratio);
     final newViewHeight =
@@ -243,19 +243,11 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
     _aspectAnimationController.forward(from: 0.0);
   }
 
-  void _scaleUpdate(ui.Size boundaries) {
+  void _scaleUpdate() {
     final oldScale = _scale;
 
-    if (widget.aspectRatio! < 1 && widget.rotationDegree % 180 != 0) {
-      final minScaleX =
-          boundaries.width / (_image!.width * _ratio * widget.aspectRatio!);
-      final minScaleY =
-          boundaries.height / (_image!.height * _ratio * widget.aspectRatio!);
+    _scale = 1.0;
 
-      _scale = max(minScaleX, minScaleY);
-    } else {
-      _scale = 1.0;
-    }
     _scaleTween = Tween<double>(begin: oldScale, end: _scale);
   }
 
