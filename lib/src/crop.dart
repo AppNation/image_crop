@@ -26,6 +26,7 @@ class Crop extends StatefulWidget {
   final bool canDragGrid;
   final bool clipOutsideGrid; // Image does not appear outside the grid if true
   final bool animateToNewAspectRatio;
+  final bool isRatioChangeWithRotate;
 
   const Crop({
     Key? key,
@@ -40,6 +41,7 @@ class Crop extends StatefulWidget {
     this.canDragGrid = true,
     this.clipOutsideGrid = false,
     this.animateToNewAspectRatio = false,
+    this.isRatioChangeWithRotate = false,
   }) : super(key: key);
 
   Crop.file(
@@ -56,6 +58,7 @@ class Crop extends StatefulWidget {
     this.canDragGrid = true,
     this.clipOutsideGrid = false,
     this.animateToNewAspectRatio = false,
+    this.isRatioChangeWithRotate = false,
   })  : image = FileImage(file, scale: scale),
         super(key: key);
 
@@ -74,6 +77,7 @@ class Crop extends StatefulWidget {
     this.canDragGrid = true,
     this.clipOutsideGrid = false,
     this.animateToNewAspectRatio = false,
+    this.isRatioChangeWithRotate = false,
   })  : image = AssetImage(assetName, bundle: bundle, package: package),
         super(key: key);
 
@@ -179,11 +183,10 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
 
     if (widget.image != oldWidget.image) {
       _getImage();
-    } else if (widget.aspectRatio != oldWidget.aspectRatio) {
+    } else if (widget.aspectRatio != oldWidget.aspectRatio &&
+        !widget.isRatioChangeWithRotate) {
       if (widget.animateToNewAspectRatio) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _animateToNewAspectRatio();
-        });
+        _animateToNewAspectRatio();
       } else {
         _area = _calculateDefaultArea(
           viewWidth: _view.width,
@@ -203,44 +206,46 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
     }
   }
 
-  void _animateToNewAspectRatio() {
-    final boundaries = _boundaries;
-    if (boundaries == null || _image == null) {
-      return;
-    }
+  void _animateToNewAspectRatio({Rect? oldAreaRect}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final boundaries = _boundaries;
+      if (boundaries == null || _image == null) {
+        return;
+      }
 
-    final oldView = _view;
-    final oldArea = _area;
+      final oldView = _view;
+      final oldArea = oldAreaRect ?? _area;
 
-    _ratio = max(
-      boundaries.width / _image!.width,
-      boundaries.height / _image!.height,
-    );
+      _ratio = max(
+        boundaries.width / _image!.width,
+        boundaries.height / _image!.height,
+      );
 
-    _scaleUpdate();
+      _scaleUpdate();
 
-    final newViewWidth = boundaries.width / (_image!.width * _scale * _ratio);
-    final newViewHeight =
-        boundaries.height / (_image!.height * _scale * _ratio);
+      final newViewWidth = boundaries.width / (_image!.width * _scale * _ratio);
+      final newViewHeight =
+          boundaries.height / (_image!.height * _scale * _ratio);
 
-    final newView = Rect.fromLTWH(
-      (newViewWidth - 1.0) / 2,
-      (newViewHeight - 1.0) / 2,
-      newViewWidth,
-      newViewHeight,
-    );
+      final newView = Rect.fromLTWH(
+        (newViewWidth - 1.0) / 2,
+        (newViewHeight - 1.0) / 2,
+        newViewWidth,
+        newViewHeight,
+      );
 
-    final newArea = _calculateDefaultArea(
-      viewWidth: newViewWidth,
-      viewHeight: newViewHeight,
-      imageWidth: _image!.width,
-      imageHeight: _image!.height,
-    );
+      final newArea = _calculateDefaultArea(
+        viewWidth: newViewWidth,
+        viewHeight: newViewHeight,
+        imageWidth: _image!.width,
+        imageHeight: _image!.height,
+      );
 
-    _viewTween = RectTween(begin: oldView, end: newView);
-    _areaTween = RectTween(begin: oldArea, end: newArea);
+      _viewTween = RectTween(begin: oldView, end: newView);
+      _areaTween = RectTween(begin: oldArea, end: newArea);
 
-    _aspectAnimationController.forward(from: 0.0);
+      _aspectAnimationController.forward(from: 0.0);
+    });
   }
 
   void _scaleUpdate() {
@@ -402,6 +407,7 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
     if (boundaries == null) {
       return;
     }
+    final oldArea = _area;
 
     WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
       final image = imageInfo.image;
@@ -434,6 +440,10 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
     });
 
     WidgetsBinding.instance.ensureVisualUpdate();
+
+    if (widget.isRatioChangeWithRotate) {
+      _animateToNewAspectRatio(oldAreaRect: oldArea);
+    }
   }
 
   _CropHandleSide _hitCropHandle(Offset? localPoint) {
