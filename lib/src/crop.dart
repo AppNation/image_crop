@@ -146,7 +146,7 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
 
     _aspectAnimationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 250),
+      duration: const Duration(milliseconds: 200),
     )..addListener(() {
         setState(() {
           _view = _viewTween.evaluate(_aspectAnimationController)!;
