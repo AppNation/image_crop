@@ -27,6 +27,8 @@ class Crop extends StatefulWidget {
   final bool clipOutsideGrid; // Image does not appear outside the grid if true
   final bool animateToNewAspectRatio;
   final bool isRatioChangeWithRotate;
+  final bool isZoomable;
+  final bool isCustomScaleCalculation;
 
   const Crop({
     Key? key,
@@ -42,6 +44,8 @@ class Crop extends StatefulWidget {
     this.clipOutsideGrid = false,
     this.animateToNewAspectRatio = false,
     this.isRatioChangeWithRotate = false,
+    this.isZoomable = true,
+    this.isCustomScaleCalculation = false,
   }) : super(key: key);
 
   Crop.file(
@@ -59,6 +63,8 @@ class Crop extends StatefulWidget {
     this.clipOutsideGrid = false,
     this.animateToNewAspectRatio = false,
     this.isRatioChangeWithRotate = false,
+    this.isZoomable = true,
+    this.isCustomScaleCalculation = false,
   })  : image = FileImage(file, scale: scale),
         super(key: key);
 
@@ -78,6 +84,8 @@ class Crop extends StatefulWidget {
     this.clipOutsideGrid = false,
     this.animateToNewAspectRatio = false,
     this.isRatioChangeWithRotate = false,
+    this.isZoomable = true,
+    this.isCustomScaleCalculation = false,
   })  : image = AssetImage(assetName, bundle: bundle, package: package),
         super(key: key);
 
@@ -221,7 +229,7 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
         boundaries.height / _image!.height,
       );
 
-      _scaleUpdate();
+      _scaleUpdateImage(boundaries);
 
       final newViewWidth = boundaries.width / (_image!.width * _scale * _ratio);
       final newViewHeight =
@@ -248,10 +256,24 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
     });
   }
 
-  void _scaleUpdate() {
+  void _scaleUpdateImage(ui.Size boundaries) {
     final oldScale = _scale;
+    final minScaleX =
+        boundaries.width / (_image!.width * _ratio * widget.aspectRatio!);
+    final minScaleY =
+        boundaries.height / (_image!.height * _ratio * widget.aspectRatio!);
 
-    _scale = 1.0;
+    if (_image!.height == _image!.width) {
+      _scale = (widget.aspectRatio == 1 || widget.aspectRatio! < 1)
+          ? min(minScaleX, minScaleY)
+          : max(minScaleX, minScaleY);
+    } else if (_image!.height > _image!.width) {
+      _scale = 1.0;
+    } else {
+      _scale = (widget.aspectRatio == 1 || widget.aspectRatio! < 1)
+          ? 1.0
+          : max(minScaleX, minScaleY);
+    }
 
     _scaleTween = Tween<double>(begin: oldScale, end: _scale);
   }
@@ -414,12 +436,17 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
 
       setState(() {
         _image = image;
-        _scale = imageInfo.scale;
 
         _ratio = max(
           boundaries.width / image.width,
           boundaries.height / image.height,
         );
+
+        if (widget.isCustomScaleCalculation) {
+          _scaleUpdateImage(boundaries);
+        } else {
+          _scale = imageInfo.scale;
+        }
 
         final viewWidth = boundaries.width / (image.width * _scale * _ratio);
         final viewHeight = boundaries.height / (image.height * _scale * _ratio);
@@ -440,7 +467,6 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
     });
 
     WidgetsBinding.instance.ensureVisualUpdate();
-
     if (widget.isRatioChangeWithRotate) {
       _animateToNewAspectRatio(oldAreaRect: oldArea);
     }
@@ -551,6 +577,7 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
     }
 
     final targetScale = _scale.clamp(minimumScale, _maximumScale);
+
     _scaleTween = Tween<double>(
       begin: _scale,
       end: targetScale,
@@ -560,7 +587,9 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
 
     _viewTween = RectTween(
       begin: _view,
-      end: _getViewInBoundaries(targetScale),
+      end: _getViewInBoundaries(
+        widget.isCustomScaleCalculation ? 1.0 : targetScale,
+      ),
     );
 
     _settleController.value = 0.0;
@@ -721,7 +750,7 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
           );
         }
       });
-    } else if (_action == _CropAction.scaling) {
+    } else if (_action == _CropAction.scaling && widget.isZoomable) {
       final image = _image;
       final boundaries = _boundaries;
       if (image == null || boundaries == null) {
