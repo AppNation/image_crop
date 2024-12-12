@@ -131,6 +131,8 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
 
   // Counting pointers(number of user fingers on screen)
   int pointers = 0;
+  // Notifier to check if the image is moving
+  final isMovingNotifier = ValueNotifier<bool>(false);
 
   @override
   void initState() {
@@ -165,7 +167,7 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
     _activeController.dispose();
     _settleController.dispose();
     _aspectAnimationController.dispose();
-
+    isMovingNotifier.dispose();
     super.dispose();
   }
 
@@ -499,6 +501,7 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
   }
 
   void _handleScaleStart(ScaleStartDetails details) {
+    isMovingNotifier.value = true;
     _activate();
     _settleController.stop(canceled: false);
     _lastFocalPoint = details.focalPoint;
@@ -544,6 +547,7 @@ class CropState extends State<Crop> with TickerProviderStateMixin {
   }
 
   void _handleScaleEnd(ScaleEndDetails details) {
+    isMovingNotifier.value = false;
     _deactivate();
     final minimumScale = _minimumScale;
     if (minimumScale == null) {
