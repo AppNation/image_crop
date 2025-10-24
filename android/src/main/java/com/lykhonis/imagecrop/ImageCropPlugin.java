@@ -12,6 +12,9 @@ import android.graphics.RectF;
 import android.os.Build;
 import android.util.Log;
 
+import androidx.annotation.NonNull;
+import androidx.exifinterface.media.ExifInterface;
+
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -24,123 +27,116 @@ import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-import androidx.annotation.NonNull;
-import androidx.exifinterface.media.ExifInterface;
-import io.flutter.plugin.common.MethodCall;
-import io.flutter.plugin.common.MethodChannel;
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
 import io.flutter.embedding.engine.plugins.activity.ActivityAware;
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding;
+import io.flutter.plugin.common.BinaryMessenger;
+import io.flutter.plugin.common.MethodCall;
+import io.flutter.plugin.common.MethodChannel;
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler;
 import io.flutter.plugin.common.MethodChannel.Result;
 import io.flutter.plugin.common.PluginRegistry;
-import io.flutter.plugin.common.PluginRegistry.Registrar;
-import io.flutter.plugin.common.BinaryMessenger;
 
 import static android.Manifest.permission.READ_EXTERNAL_STORAGE;
 import static android.Manifest.permission.WRITE_EXTERNAL_STORAGE;
 
-public final class ImageCropPlugin implements MethodCallHandler, PluginRegistry.RequestPermissionsResultListener, FlutterPlugin, ActivityAware {
+public final class ImageCropPlugin implements FlutterPlugin, ActivityAware, MethodCallHandler, PluginRegistry.RequestPermissionsResultListener {
     private static final int PERMISSION_REQUEST_CODE = 13094;
 
+    private MethodChannel channel;
+    private ActivityPluginBinding binding;
     private Activity activity;
     private Result permissionRequestResult;
     private ExecutorService executor;
-    private FlutterPluginBinding pluginBinding;
-    
 
-public ImageCropPlugin() {
-    }
-    
-     @Override
-  public void onAttachedToEngine(FlutterPluginBinding binding) {
-    pluginBinding = binding;
-  }
+    public ImageCropPlugin() {}
 
-  @Override
-  public void onDetachedFromEngine(FlutterPluginBinding binding) {
-  }
-
-  @Override
-  public void onAttachedToActivity(ActivityPluginBinding binding) {
-      setup(
-        pluginBinding.getBinaryMessenger(),
-        binding.getActivity(),
-        null,
-        binding);
-  }
-
-  @Override
-  public void onDetachedFromActivity() {
-    
-  }
-
-  @Override
-  public void onDetachedFromActivityForConfigChanges() {
-  }
-
-  @Override
-  public void onReattachedToActivityForConfigChanges(ActivityPluginBinding binding) {
-    onAttachedToActivity(binding);
-  }
-
-   
-
-
-
-    public static void registerWith(Registrar registrar) {
-    if (registrar.activity() == null) {
-      // If a background flutter view tries to register the plugin, there will be no activity from the registrar,
-      // we stop the registering process immediately because the ImagePicker requires an activity.
-      return;
-    }
-     
-     ImageCropPlugin instance = new ImageCropPlugin();
-     instance.activity = registrar.activity();
-     MethodChannel channel = new MethodChannel(registrar.messenger(), "plugins.lykhonis.com/image_crop");
-    //  instance.setup(registrar.messenger(), application, this.activity, registrar, null);
-     channel.setMethodCallHandler(instance);
-      registrar.addRequestPermissionsResultListener(instance);
-
-    }
-
-    private void setup(final BinaryMessenger messenger,
-      final Activity activity,
-      final PluginRegistry.Registrar registrar,
-      final ActivityPluginBinding activityBinding) {
-
-      // V2 embedding setup for activity listeners.
-      MethodChannel channel = new MethodChannel(messenger, "plugins.lykhonis.com/image_crop");
-      this.activity = activity;
-      channel.setMethodCallHandler(this);
-      activityBinding.addRequestPermissionsResultListener(this);
-    }
-
-    @SuppressWarnings("ConstantConditions")
     @Override
-    public void onMethodCall(MethodCall call, Result result) {
-        if ("cropImage".equals(call.method)) {
-            String path = call.argument("path");
-            double scale = call.argument("scale");
-            double left = call.argument("left");
-            double top = call.argument("top");
-            double right = call.argument("right");
-            double bottom = call.argument("bottom");
-            RectF area = new RectF((float) left, (float) top, (float) right, (float) bottom);
-            cropImage(path, area, (float) scale, result);
-        } else if ("sampleImage".equals(call.method)) {
-            String path = call.argument("path");
-            int maximumWidth = call.argument("maximumWidth");
-            int maximumHeight = call.argument("maximumHeight");
-            sampleImage(path, maximumWidth, maximumHeight, result);
-        } else if ("getImageOptions".equals(call.method)) {
-            String path = call.argument("path");
-            getImageOptions(path, result);
-        } else if ("requestPermissions".equals(call.method)) {
-            requestPermissions(result);
-        } else {
-            result.notImplemented();
+    public void onAttachedToEngine(@NonNull FlutterPluginBinding binding) {
+        setup(binding.getBinaryMessenger());
+    }
+
+    @Override
+    public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
+        if (channel != null) {
+            channel.setMethodCallHandler(null);
+            channel = null;
         }
+    }
+
+    @Override
+    public void onAttachedToActivity(@NonNull ActivityPluginBinding activityPluginBinding) {
+        binding = activityPluginBinding;
+        activity = activityPluginBinding.getActivity();
+        activityPluginBinding.addRequestPermissionsResultListener(this);
+    }
+
+    @Override
+    public void onDetachedFromActivity() {
+        activity = null;
+        if (binding != null) {
+            binding.removeRequestPermissionsResultListener(this);
+            binding = null;
+        }
+    }
+
+    @Override
+    public void onReattachedToActivityForConfigChanges(@NonNull ActivityPluginBinding activityPluginBinding) {
+        onAttachedToActivity(activityPluginBinding);
+    }
+
+    @Override
+    public void onDetachedFromActivityForConfigChanges() {
+        onDetachedFromActivity();
+    }
+
+    private void setup(BinaryMessenger messenger) {
+        channel = new MethodChannel(messenger, "plugins.lykhonis.com/image_crop");
+        channel.setMethodCallHandler(this);
+    }
+
+    @Override
+    public void onMethodCall(@NonNull MethodCall call, @NonNull Result result) {
+        switch (call.method) {
+            case "cropImage":
+                handleCropImage(call, result);
+                break;
+            case "sampleImage":
+                handleSampleImage(call, result);
+                break;
+            case "getImageOptions":
+                handleGetImageOptions(call, result);
+                break;
+            case "requestPermissions":
+                requestPermissions(result);
+                break;
+            default:
+                result.notImplemented();
+                break;
+        }
+    }
+
+    private void handleCropImage(MethodCall call, Result result) {
+        String path = call.argument("path");
+        double scale = call.argument("scale");
+        double left = call.argument("left");
+        double top = call.argument("top");
+        double right = call.argument("right");
+        double bottom = call.argument("bottom");
+        RectF area = new RectF((float) left, (float) top, (float) right, (float) bottom);
+        cropImage(path, area, (float) scale, result);
+    }
+
+    private void handleSampleImage(MethodCall call, Result result) {
+        String path = call.argument("path");
+        int maximumWidth = call.argument("maximumWidth");
+        int maximumHeight = call.argument("maximumHeight");
+        sampleImage(path, maximumWidth, maximumHeight, result);
+    }
+
+    private void handleGetImageOptions(MethodCall call, Result result) {
+        String path = call.argument("path");
+        getImageOptions(path, result);
     }
 
     private synchronized void io(@NonNull Runnable runnable) {
@@ -151,164 +147,113 @@ public ImageCropPlugin() {
     }
 
     private void ui(@NonNull Runnable runnable) {
-        activity.runOnUiThread(runnable);
+        if (activity != null) {
+            activity.runOnUiThread(runnable);
+        }
     }
 
     private void cropImage(final String path, final RectF area, final float scale, final Result result) {
-        io(new Runnable() {
-            @Override
-            public void run() {
-                File srcFile = new File(path);
-                if (!srcFile.exists()) {
-                    ui(new Runnable() {
-                        @Override
-                        public void run() {
-                            result.error("INVALID", "Image source cannot be opened", null);
-                        }
-                    });
-                    return;
-                }
+        io(() -> {
+            File srcFile = new File(path);
+            if (!srcFile.exists()) {
+                ui(() -> result.error("INVALID", "Image source cannot be opened", null));
+                return;
+            }
 
-                Bitmap srcBitmap = BitmapFactory.decodeFile(path, null);
-                if (srcBitmap == null) {
-                    ui(new Runnable() {
-                        @Override
-                        public void run() {
-                            result.error("INVALID", "Image source cannot be decoded", null);
-                        }
-                    });
-                    return;
-                }
+            Bitmap srcBitmap = BitmapFactory.decodeFile(path, null);
+            if (srcBitmap == null) {
+                ui(() -> result.error("INVALID", "Image source cannot be decoded", null));
+                return;
+            }
 
-                ImageOptions options = decodeImageOptions(path);
-                if (options.isFlippedDimensions()) {
-                    Matrix transformations = new Matrix();
-                    transformations.postRotate(options.getDegrees());
-                    Bitmap oldBitmap = srcBitmap;
-                    srcBitmap = Bitmap.createBitmap(oldBitmap,
-                                                    0, 0,
-                                                    oldBitmap.getWidth(), oldBitmap.getHeight(),
-                                                    transformations, true);
-                    oldBitmap.recycle();
-                }
+            ImageOptions options = decodeImageOptions(path);
+            if (options.isFlippedDimensions()) {
+                Matrix transformations = new Matrix();
+                transformations.postRotate(options.getDegrees());
+                Bitmap oldBitmap = srcBitmap;
+                srcBitmap = Bitmap.createBitmap(oldBitmap,
+                        0, 0,
+                        oldBitmap.getWidth(), oldBitmap.getHeight(),
+                        transformations, true);
+                oldBitmap.recycle();
+            }
 
-                int width = (int) (options.getWidth() * area.width() * scale);
-                int height = (int) (options.getHeight() * area.height() * scale);
+            int width = (int) (options.getWidth() * area.width() * scale);
+            int height = (int) (options.getHeight() * area.height() * scale);
 
-                Bitmap dstBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
-                Canvas canvas = new Canvas(dstBitmap);
+            Bitmap dstBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(dstBitmap);
 
-                Paint paint = new Paint();
-                paint.setAntiAlias(true);
-                paint.setFilterBitmap(true);
-                paint.setDither(true);
+            Paint paint = new Paint();
+            paint.setAntiAlias(true);
+            paint.setFilterBitmap(true);
+            paint.setDither(true);
 
-                Rect srcRect = new Rect((int) (srcBitmap.getWidth() * area.left),
-                                        (int) (srcBitmap.getHeight() * area.top),
-                                        (int) (srcBitmap.getWidth() * area.right),
-                                        (int) (srcBitmap.getHeight() * area.bottom));
-                Rect dstRect = new Rect(0, 0, width, height);
-                canvas.drawBitmap(srcBitmap, srcRect, dstRect, paint);
+            Rect srcRect = new Rect((int) (srcBitmap.getWidth() * area.left),
+                    (int) (srcBitmap.getHeight() * area.top),
+                    (int) (srcBitmap.getWidth() * area.right),
+                    (int) (srcBitmap.getHeight() * area.bottom));
+            Rect dstRect = new Rect(0, 0, width, height);
+            canvas.drawBitmap(srcBitmap, srcRect, dstRect, paint);
 
-                try {
-                    final File dstFile = createTemporaryImageFile();
-                    compressBitmap(dstBitmap, dstFile);
-                    ui(new Runnable() {
-                        @Override
-                        public void run() {
-                            result.success(dstFile.getAbsolutePath());
-                        }
-                    });
-                } catch (final IOException e) {
-                    ui(new Runnable() {
-                        @Override
-                        public void run() {
-                            result.error("INVALID", "Image could not be saved", e);
-                        }
-                    });
-                } finally {
-                    canvas.setBitmap(null);
-                    dstBitmap.recycle();
-                    srcBitmap.recycle();
-                }
+            try {
+                final File dstFile = createTemporaryImageFile();
+                compressBitmap(dstBitmap, dstFile);
+                ui(() -> result.success(dstFile.getAbsolutePath()));
+            } catch (final IOException e) {
+                ui(() -> result.error("INVALID", "Image could not be saved", e));
+            } finally {
+                canvas.setBitmap(null);
+                dstBitmap.recycle();
+                srcBitmap.recycle();
             }
         });
     }
 
     private void sampleImage(final String path, final int maximumWidth, final int maximumHeight, final Result result) {
-        io(new Runnable() {
-            @Override
-            public void run() {
-                File srcFile = new File(path);
-                if (!srcFile.exists()) {
-                    ui(new Runnable() {
-                        @Override
-                        public void run() {
-                            result.error("INVALID", "Image source cannot be opened", null);
-                        }
-                    });
-                    return;
-                }
+        io(() -> {
+            File srcFile = new File(path);
+            if (!srcFile.exists()) {
+                ui(() -> result.error("INVALID", "Image source cannot be opened", null));
+                return;
+            }
 
-                ImageOptions options = decodeImageOptions(path);
-                BitmapFactory.Options bitmapOptions = new BitmapFactory.Options();
-                bitmapOptions.inSampleSize = calculateInSampleSize(options.getWidth(), options.getHeight(),
-                                                                   maximumWidth, maximumHeight);
+            ImageOptions options = decodeImageOptions(path);
+            BitmapFactory.Options bitmapOptions = new BitmapFactory.Options();
+            bitmapOptions.inSampleSize = calculateInSampleSize(options.getWidth(), options.getHeight(),
+                    maximumWidth, maximumHeight);
 
-                Bitmap bitmap = BitmapFactory.decodeFile(path, bitmapOptions);
-                if (bitmap == null) {
-                    ui(new Runnable() {
-                        @Override
-                        public void run() {
-                            result.error("INVALID", "Image source cannot be decoded", null);
-                        }
-                    });
-                    return;
-                }
+            Bitmap bitmap = BitmapFactory.decodeFile(path, bitmapOptions);
+            if (bitmap == null) {
+                ui(() -> result.error("INVALID", "Image source cannot be decoded", null));
+                return;
+            }
 
-                if (options.getWidth() > maximumWidth && options.getHeight() > maximumHeight) {
-                    float ratio = Math.max(maximumWidth / (float) options.getWidth(), maximumHeight / (float) options.getHeight());
-                    Bitmap sample = bitmap;
-                    bitmap = Bitmap.createScaledBitmap(sample, Math.round(bitmap.getWidth() * ratio), Math.round(bitmap.getHeight() * ratio), true);
-                    sample.recycle();
-                }
+            if (options.getWidth() > maximumWidth && options.getHeight() > maximumHeight) {
+                float ratio = Math.max(maximumWidth / (float) options.getWidth(), maximumHeight / (float) options.getHeight());
+                Bitmap sample = bitmap;
+                bitmap = Bitmap.createScaledBitmap(sample, Math.round(bitmap.getWidth() * ratio), Math.round(bitmap.getHeight() * ratio), true);
+                sample.recycle();
+            }
 
-                try {
-                    final File dstFile = createTemporaryImageFile();
-                    compressBitmap(bitmap, dstFile);
-                    copyExif(srcFile, dstFile);
-                    ui(new Runnable() {
-                        @Override
-                        public void run() {
-                            result.success(dstFile.getAbsolutePath());
-                        }
-                    });
-                } catch (final IOException e) {
-                    ui(new Runnable() {
-                        @Override
-                        public void run() {
-                            result.error("INVALID", "Image could not be saved", e);
-                        }
-                    });
-                } finally {
-                    bitmap.recycle();
-                }
+            try {
+                final File dstFile = createTemporaryImageFile();
+                compressBitmap(bitmap, dstFile);
+                copyExif(srcFile, dstFile);
+                ui(() -> result.success(dstFile.getAbsolutePath()));
+            } catch (final IOException e) {
+                ui(() -> result.error("INVALID", "Image could not be saved", e));
+            } finally {
+                bitmap.recycle();
             }
         });
     }
 
-    @SuppressWarnings("TryFinallyCanBeTryWithResources")
     private void compressBitmap(Bitmap bitmap, File file) throws IOException {
-        OutputStream outputStream = new FileOutputStream(file);
-        try {
+        try (OutputStream outputStream = new FileOutputStream(file)) {
             boolean compressed = bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream);
             if (!compressed) {
                 throw new IOException("Failed to compress bitmap into JPEG");
-            }
-        } finally {
-            try {
-                outputStream.close();
-            } catch (IOException ignore) {
             }
         }
     }
@@ -329,27 +274,19 @@ public ImageCropPlugin() {
     }
 
     private void getImageOptions(final String path, final Result result) {
-        io(new Runnable() {
-            @Override
-            public void run() {
-                File file = new File(path);
-                if (!file.exists()) {
-                    result.error("INVALID", "Image source cannot be opened", null);
-                    return;
-                }
-
-                ImageOptions options = decodeImageOptions(path);
-                final Map<String, Object> properties = new HashMap<>();
-                properties.put("width", options.getWidth());
-                properties.put("height", options.getHeight());
-
-                ui(new Runnable() {
-                    @Override
-                    public void run() {
-                        result.success(properties);
-                    }
-                });
+        io(() -> {
+            File file = new File(path);
+            if (!file.exists()) {
+                result.error("INVALID", "Image source cannot be opened", null);
+                return;
             }
+
+            ImageOptions options = decodeImageOptions(path);
+            final Map<String, Object> properties = new HashMap<>();
+            properties.put("width", options.getWidth());
+            properties.put("height", options.getHeight());
+
+            ui(() -> result.success(properties));
         });
     }
 
@@ -373,14 +310,15 @@ public ImageCropPlugin() {
             int readExternalStorage = getPermissionGrantResult(READ_EXTERNAL_STORAGE, permissions, grantResults);
             int writeExternalStorage = getPermissionGrantResult(WRITE_EXTERNAL_STORAGE, permissions, grantResults);
             permissionRequestResult.success(readExternalStorage == PackageManager.PERMISSION_GRANTED &&
-                                                    writeExternalStorage == PackageManager.PERMISSION_GRANTED);
+                    writeExternalStorage == PackageManager.PERMISSION_GRANTED);
             permissionRequestResult = null;
+            return true;
         }
         return false;
     }
 
     private int getPermissionGrantResult(String permission, String[] permissions, int[] grantResults) {
-        for (int i = 0; i < permission.length(); i++) {
+        for (int i = 0; i < permissions.length; i++) {
             if (permission.equals(permissions[i])) {
                 return grantResults[i];
             }
@@ -389,7 +327,10 @@ public ImageCropPlugin() {
     }
 
     private File createTemporaryImageFile() throws IOException {
-        File directory = this.activity.getCacheDir();
+        if (activity == null) {
+            throw new IOException("Activity is null, cannot create temporary file");
+        }
+        File directory = activity.getCacheDir();
         String name = "image_crop_" + UUID.randomUUID().toString();
         return File.createTempFile(name, ".jpg", directory);
     }
@@ -413,27 +354,26 @@ public ImageCropPlugin() {
             ExifInterface sourceExif = new ExifInterface(source.getAbsolutePath());
             ExifInterface destinationExif = new ExifInterface(destination.getAbsolutePath());
 
-            List<String> tags =
-                    Arrays.asList(
-                            ExifInterface.TAG_F_NUMBER,
-                            ExifInterface.TAG_EXPOSURE_TIME,
-                            ExifInterface.TAG_PHOTOGRAPHIC_SENSITIVITY,
-                            ExifInterface.TAG_GPS_ALTITUDE,
-                            ExifInterface.TAG_GPS_ALTITUDE_REF,
-                            ExifInterface.TAG_FOCAL_LENGTH,
-                            ExifInterface.TAG_GPS_DATESTAMP,
-                            ExifInterface.TAG_WHITE_BALANCE,
-                            ExifInterface.TAG_GPS_PROCESSING_METHOD,
-                            ExifInterface.TAG_GPS_TIMESTAMP,
-                            ExifInterface.TAG_DATETIME,
-                            ExifInterface.TAG_FLASH,
-                            ExifInterface.TAG_GPS_LATITUDE,
-                            ExifInterface.TAG_GPS_LATITUDE_REF,
-                            ExifInterface.TAG_GPS_LONGITUDE,
-                            ExifInterface.TAG_GPS_LONGITUDE_REF,
-                            ExifInterface.TAG_MAKE,
-                            ExifInterface.TAG_MODEL,
-                            ExifInterface.TAG_ORIENTATION);
+            List<String> tags = Arrays.asList(
+                    ExifInterface.TAG_F_NUMBER,
+                    ExifInterface.TAG_EXPOSURE_TIME,
+                    ExifInterface.TAG_PHOTOGRAPHIC_SENSITIVITY,
+                    ExifInterface.TAG_GPS_ALTITUDE,
+                    ExifInterface.TAG_GPS_ALTITUDE_REF,
+                    ExifInterface.TAG_FOCAL_LENGTH,
+                    ExifInterface.TAG_GPS_DATESTAMP,
+                    ExifInterface.TAG_WHITE_BALANCE,
+                    ExifInterface.TAG_GPS_PROCESSING_METHOD,
+                    ExifInterface.TAG_GPS_TIMESTAMP,
+                    ExifInterface.TAG_DATETIME,
+                    ExifInterface.TAG_FLASH,
+                    ExifInterface.TAG_GPS_LATITUDE,
+                    ExifInterface.TAG_GPS_LATITUDE_REF,
+                    ExifInterface.TAG_GPS_LONGITUDE,
+                    ExifInterface.TAG_GPS_LONGITUDE_REF,
+                    ExifInterface.TAG_MAKE,
+                    ExifInterface.TAG_MODEL,
+                    ExifInterface.TAG_ORIENTATION);
 
             for (String tag : tags) {
                 String attribute = sourceExif.getAttribute(tag);
@@ -449,9 +389,9 @@ public ImageCropPlugin() {
     }
 
     private static final class ImageOptions {
-        private int width;
-        private int height;
-        private int degrees;
+        private final int width;
+        private final int height;
+        private final int degrees;
 
         ImageOptions(int width, int height, int degrees) {
             this.width = width;
@@ -460,11 +400,11 @@ public ImageCropPlugin() {
         }
 
         int getHeight() {
-            return isFlippedDimensions() ? width : height;
+            return (isFlippedDimensions() && degrees != 180) ? width : height;
         }
 
         int getWidth() {
-            return isFlippedDimensions() ? height : width;
+            return (isFlippedDimensions() && degrees != 180) ? height : width;
         }
 
         int getDegrees() {
@@ -472,7 +412,7 @@ public ImageCropPlugin() {
         }
 
         boolean isFlippedDimensions() {
-            return degrees == 90 || degrees == 270;
+            return degrees == 90 || degrees == 270 || degrees == 180;
         }
 
         public boolean isRotated() {
